@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
-// Define a struct to track processing statistics
+/// Struct to track processing statistics during image transformation
 #[derive(Default, Clone)]
 struct ProcessingStats {
     total_images: usize,
@@ -21,6 +21,22 @@ struct ProcessingStats {
     errors: Vec<String>,
 }
 
+/// Process images according to the provided configuration
+///
+/// This function is the main entry point for image processing. It:
+/// 1. Finds all images in the input directory (recursively if specified)
+/// 2. Processes each image with all configured transformations in parallel
+/// 3. Tracks and reports progress with a progress bar
+/// 4. Generates a summary report of processing results
+/// 5. Optionally runs StirMark for additional transformations if configured
+///
+/// # Arguments
+///
+/// * `config` - The configuration containing input/output directories and transformation settings
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn Error>>` - Success or an error with description
 pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
     let entries = if config.recursive {
         find_images_recursive(&config.input_dir)?
@@ -109,6 +125,11 @@ pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Print a summary report of the image processing results
+///
+/// # Arguments
+///
+/// * `stats` - The processing statistics to report
 fn print_summary_report(stats: &ProcessingStats) {
     println!("\n===== Processing Summary =====");
     println!("Images:");
@@ -129,6 +150,24 @@ fn print_summary_report(stats: &ProcessingStats) {
     }
 }
 
+/// Process a single image with all configured transformations
+///
+/// This function:
+/// 1. Creates a subfolder for the image's variants
+/// 2. Loads the image (with special handling for HEIC if enabled)
+/// 3. Applies each transformation and saves the result
+/// 4. Updates progress and statistics
+///
+/// # Arguments
+///
+/// * `img_path` - Path to the image file
+/// * `config` - Configuration with transformation settings
+/// * `progress` - Progress bar for tracking and displaying progress
+/// * `stats` - Statistics tracker for recording results
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn Error>>` - Success or an error with description
 fn process_image(
     img_path: &Path,
     config: &Arc<Config>,
@@ -230,6 +269,15 @@ fn process_image(
     Ok(())
 }
 
+/// Find images in a directory (non-recursive)
+///
+/// # Arguments
+///
+/// * `dir` - Directory path to search for images
+///
+/// # Returns
+///
+/// * `Result<Vec<PathBuf>, Box<dyn Error>>` - List of image paths or an error
 pub fn find_images(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let mut results = Vec::new();
 
@@ -268,6 +316,15 @@ pub fn find_images(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     Ok(results)
 }
 
+/// Find images recursively in a directory and its subdirectories
+///
+/// # Arguments
+///
+/// * `dir` - Directory path to search for images recursively
+///
+/// # Returns
+///
+/// * `Result<Vec<PathBuf>, Box<dyn Error>>` - List of image paths or an error
 pub fn find_images_recursive(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let mut results = Vec::new();
 
@@ -318,6 +375,17 @@ pub fn find_images_recursive(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>>
     Ok(results)
 }
 
+/// Save an image to disk in the specified format
+///
+/// # Arguments
+///
+/// * `img` - The image to save
+/// * `path` - The path where the image should be saved
+/// * `format` - The format to save the image in
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn Error>>` - Success or an error with description
 pub fn save_image(
     img: &DynamicImage,
     path: &Path,
@@ -379,76 +447,200 @@ pub fn save_image(
     Ok(())
 }
 
+/// Convert a HEIC image to a DynamicImage
+///
+/// This function is only available when the "heic" feature is enabled.
+///
+/// # Arguments
+///
+/// * `path` - Path to the HEIC image file
+///
+/// # Returns
+///
+/// * `Result<DynamicImage, Box<dyn Error>>` - The converted image or an error
 #[cfg(feature = "heic")]
 fn convert_heic_to_dynamic_image(path: &Path) -> Result<DynamicImage, Box<dyn Error>> {
-    use libheif_rs::{ColorSpace, HeifContext};
+    use libheif_rs::{ColorSpace, HeifContext, LibHeif, RgbChroma};
 
-    let context = HeifContext::read_from_file(path)?;
+    let lib_heif = LibHeif::new();
+    let context = HeifContext::read_from_file(path.to_str().ok_or("Invalid path")?)?;
     let handle = context.primary_image_handle()?;
-    let image = handle.decode(ColorSpace::Rgb, None)?;
+    let image = lib_heif.decode(&handle, ColorSpace::Rgb(RgbChroma::Rgb), None)?;
 
     let width = image.width();
     let height = image.height();
-    let stride = image.stride(0)?;
-    let data = image.planes().interleaved;
+    let planes = image.planes();
+    let interleaved_plane = planes.interleaved.ok_or("No interleaved plane available")?;
+    let stride = interleaved_plane.stride;
+    let data = interleaved_plane.data;
 
-    // Convert to RGB8 format that image crate can understand
-    let img = DynamicImage::ImageRgb8(
-        image::ImageBuffer::from_raw(width as u32, height as u32, data.to_vec()).unwrap(),
-    );
+    // If the stride matches what we expect for tightly packed RGB data, we can use the data directly
+    if stride == width as usize * 3 {
+        // Convert to RGB8 format that image crate can understand
+        match image::ImageBuffer::from_raw(width as u32, height as u32, data.to_vec()) {
+            Some(buffer) => Ok(DynamicImage::ImageRgb8(buffer)),
+            None => {
+                Err(format!(
+                "Failed to create ImageBuffer from HEIC data. Dimensions: {}x{}, Data length: {}",
+                width, height, data.len()
+            )
+                .into())
+            }
+        }
+    } else {
+        // If stride doesn't match, we need to create a new buffer with the correct stride
+        // This happens when there's padding at the end of each row for memory alignment
+        println!(
+            "HEIC image has stride {} for width {}, repacking data",
+            stride, width
+        );
 
-    Ok(img)
+        // Create a new buffer with the correct stride
+        let mut rgb_data = Vec::with_capacity(width as usize * height as usize * 3);
+
+        // Copy each row, skipping the padding
+        for y in 0..height as usize {
+            let row_start = y * stride;
+            let row_end = row_start + width as usize * 3; // 3 bytes per pixel (RGB)
+
+            // Check if we're within bounds
+            if row_end <= data.len() {
+                rgb_data.extend_from_slice(&data[row_start..row_end]);
+            } else {
+                return Err(format!(
+                    "HEIC data is truncated. Row {}: expected to read until index {} but buffer length is {}",
+                    y, row_end, data.len()
+                ).into());
+            }
+        }
+
+        // Store the length for error reporting
+        let data_len = rgb_data.len();
+
+        // Now create the image buffer with our correctly strided data
+        match image::ImageBuffer::from_raw(width as u32, height as u32, rgb_data) {
+            Some(buffer) => Ok(DynamicImage::ImageRgb8(buffer)),
+            None => Err(format!(
+                "Failed to create ImageBuffer from repacked HEIC data. Dimensions: {}x{}, New data length: {}",
+                width, height, data_len
+            ).into()),
+        }
+    }
 }
 
+/// Save an image in HEIC format
+///
+/// This function is only available when the "heic" feature is enabled.
+///
+/// # Arguments
+///
+/// * `img` - The image to save
+/// * `path` - The path where the image should be saved
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn Error>>` - Success or an error with description
 #[cfg(feature = "heic")]
 fn save_as_heic(img: &DynamicImage, path: &Path) -> Result<(), Box<dyn Error>> {
-    use libheif_rs::{HeifChroma, HeifColorspace, HeifContext, HeifEncoderQuality};
+    use image::GenericImageView;
+    use libheif_rs::{
+        Channel, ColorSpace, CompressionFormat, EncoderQuality, HeifContext, Image, LibHeif,
+        RgbChroma,
+    };
 
     let (width, height) = img.dimensions();
     let rgb = img.to_rgb8();
 
+    let lib_heif = LibHeif::new();
     let mut context = HeifContext::new()?;
-    let mut encoder = context.encoder_for_format(libheif_rs::HeifCompressionFormat::Hevc)?;
-    encoder.set_quality(HeifEncoderQuality::default())?;
+    let mut encoder = lib_heif.encoder_for_format(CompressionFormat::Hevc)?;
+    encoder.set_quality(EncoderQuality::LossLess)?;
 
-    let mut heif_image = libheif_rs::HeifImage::new(
-        width,
-        height,
-        HeifColorspace::Rgb,
-        HeifChroma::InterleavedRgb,
-    )?;
+    // Create RGB image with separate planes
+    let mut image = Image::new(width, height, ColorSpace::Rgb(RgbChroma::C444))?;
 
-    // Set the RGB data
-    heif_image.add_plane(
-        HeifColorspace::Rgb,
-        HeifChroma::InterleavedRgb,
-        width,
-        height,
-        8,
-    )?;
+    // Create separate planes for R, G, B
+    image.create_plane(Channel::R, width, height, 8)?;
+    image.create_plane(Channel::G, width, height, 8)?;
+    image.create_plane(Channel::B, width, height, 8)?;
 
-    let stride = heif_image.stride(0)?;
-    let plane = heif_image.planes_mut().interleaved;
+    let planes = image.planes_mut();
 
-    // Copy pixels from the image crate buffer to the heif buffer
+    // Get mutable references to the data for each plane
+    let r_plane = planes.r.ok_or("No R plane available")?;
+    let g_plane = planes.g.ok_or("No G plane available")?;
+    let b_plane = planes.b.ok_or("No B plane available")?;
+
+    let r_stride = r_plane.stride;
+    let g_stride = g_plane.stride;
+    let b_stride = b_plane.stride;
+
+    let r_data = r_plane.data;
+    let g_data = g_plane.data;
+    let b_data = b_plane.data;
+
+    // Provide debug information
+    let r_len = r_data.len();
+    let g_len = g_data.len();
+    let b_len = b_data.len();
+
+    let expected_min_size = (height as usize - 1) * r_stride + width as usize;
+    if r_len < expected_min_size || g_len < expected_min_size || b_len < expected_min_size {
+        return Err(format!(
+            "Buffer too small for image dimensions. R buffer: {}, G buffer: {}, B buffer: {}, min required: {} (width: {}, height: {})",
+            r_len, g_len, b_len, expected_min_size, width, height
+        ).into());
+    }
+
+    // Copy pixels from the image crate buffer to the heif buffer planes
     for y in 0..height {
+        let r_row_start = y as usize * r_stride;
+        let g_row_start = y as usize * g_stride;
+        let b_row_start = y as usize * b_stride;
+
         for x in 0..width {
             let pixel = rgb.get_pixel(x, y);
-            let offset = (y * stride as u32 + x * 3) as usize;
+            let x_pos = x as usize;
 
-            plane[offset] = pixel[0];
-            plane[offset + 1] = pixel[1];
-            plane[offset + 2] = pixel[2];
+            // Check if we're going to access within bounds
+            if r_row_start + x_pos < r_len
+                && g_row_start + x_pos < g_len
+                && b_row_start + x_pos < b_len
+            {
+                r_data[r_row_start + x_pos] = pixel[0]; // R
+                g_data[g_row_start + x_pos] = pixel[1]; // G
+                b_data[b_row_start + x_pos] = pixel[2]; // B
+            } else {
+                return Err(format!(
+                    "Buffer overflow detected when writing pixel at ({}, {})",
+                    x, y
+                )
+                .into());
+            }
         }
     }
 
-    let handle = context.encode_image(&heif_image, &encoder, None)?;
-    context.set_primary_image(&handle)?;
-    context.write_to_file(path)?;
+    let mut handle = context.encode_image(&image, &mut encoder, None)?;
+    context.set_primary_image(&mut handle)?;
+    context.write_to_file(path.to_str().ok_or("Invalid path")?)?;
 
     Ok(())
 }
 
+/// Use StirMark for additional image transformations
+///
+/// StirMark is an external tool for applying various transformations to images,
+/// particularly useful for testing watermarking algorithms.
+///
+/// # Arguments
+///
+/// * `input_dir` - Directory containing input images
+/// * `output_dir` - Directory where transformed images will be saved
+/// * `stirmark_path` - Path to the StirMark executable
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn Error>>` - Success or an error with description
 pub fn use_stirmark(
     input_dir: &Path,
     output_dir: &Path,
