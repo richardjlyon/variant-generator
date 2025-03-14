@@ -36,6 +36,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .help("Search for images recursively in input directory"),
         )
         .arg(
+            Arg::new("force")
+                .short('f')
+                .long("force")
+                .help("Force overwrite of existing output files"),
+        )
+        .arg(
             Arg::new("stirmark")
                 .long("stirmark")
                 .value_name("STIRMARK_PATH")
@@ -54,6 +60,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let input_dir = PathBuf::from(matches.get_one::<String>("input").unwrap());
     let output_dir = PathBuf::from(matches.get_one::<String>("output").unwrap());
     let recursive = matches.contains_id("recursive");
+    let force_overwrite = matches.contains_id("force");
     let stirmark_path = matches
         .get_one::<String>("stirmark")
         .map(|s| PathBuf::from(s));
@@ -72,6 +79,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         recursive,
         stirmark_path,
         matches.get_one::<String>("config").map(|s| s.as_str()),
+        force_overwrite,
     )?;
 
     // Process the images

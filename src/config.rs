@@ -105,6 +105,7 @@ pub fn create_config(
     recursive: bool,
     stirmark_path: Option<PathBuf>,
     config_path: Option<&str>,
+    force_overwrite: bool,
 ) -> Result<Config, Box<dyn Error>> {
     // Set up default transformations or read from config file
     let transformations = if let Some(config_path) = config_path {
@@ -119,5 +120,6 @@ pub fn create_config(
         transformations,
         recursive,
         stirmark_path,
+        force_overwrite,
     })
 }

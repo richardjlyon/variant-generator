@@ -15,6 +15,10 @@ pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
         find_images(&config.input_dir)?
     };
 
+    if entries.is_empty() {
+        return Ok(());
+    }
+
     // Use Arc to share the Config across threads
     let config = Arc::new(config);
 
@@ -70,10 +74,6 @@ pub fn process_image(img_path: &Path, config: &Arc<Config>) -> Result<(), Box<dy
             }
             #[cfg(not(feature = "heic"))]
             {
-                println!(
-                    "HEIC support not compiled in. Skipping: {}",
-                    img_path.display()
-                );
                 return Ok(());
             }
         }
@@ -82,12 +82,19 @@ pub fn process_image(img_path: &Path, config: &Arc<Config>) -> Result<(), Box<dy
 
     // Apply each transformation and save the result
     for (i, transform) in config.transformations.iter().enumerate() {
-        let transformed = apply_transformation(&img, transform, &format)?;
+        let transform_name = transformation_name(transform);
 
         // Generate output filename
-        let transform_name = transformation_name(transform);
         let output_filename = format!("{}_{}_{}.{}", stem, transform_name, i, ext);
-        let output_path = image_subfolder.join(output_filename);
+        let output_path = image_subfolder.join(&output_filename);
+
+        // Skip if the file already exists (useful for resuming interrupted operations)
+        if output_path.exists() && !config.force_overwrite {
+            continue;
+        }
+
+        // Apply the transformation
+        let transformed = apply_transformation(&img, transform, &format)?;
 
         // Save the transformed image
         save_image(&transformed, &output_path, format)?;
@@ -247,8 +254,6 @@ pub fn use_stirmark(
     output_dir: &Path,
     stirmark_path: &Path,
 ) -> Result<(), Box<dyn Error>> {
-    println!("Running StirMark for additional transformations...");
-
     // Check if StirMark exists
     if !stirmark_path.exists() {
         return Err(format!(
@@ -277,7 +282,6 @@ pub fn use_stirmark(
         .collect();
 
     if jpeg_entries.is_empty() {
-        println!("No JPEG images found for StirMark processing.");
         return Ok(());
     }
 
@@ -293,7 +297,7 @@ pub fn use_stirmark(
     fs::create_dir_all(&stirmark_temp_dir)?;
 
     // Run StirMark with common transformations
-    let output = Command::new(stirmark_path)
+    Command::new(stirmark_path)
         .args(&[
             "-i",
             img_list_path.to_str().unwrap(),
@@ -309,14 +313,6 @@ pub fn use_stirmark(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()?;
-
-    println!("StirMark output:");
-    println!("{}", String::from_utf8_lossy(&output.stdout));
-
-    if !output.status.success() {
-        println!("StirMark error:");
-        println!("{}", String::from_utf8_lossy(&output.stderr));
-    }
 
     // Move files to appropriate subfolders
     for entry in fs::read_dir(&stirmark_temp_dir)? {

@@ -51,4 +51,5 @@ pub struct Config {
     pub transformations: Vec<Transformation>,
     pub recursive: bool,
     pub stirmark_path: Option<PathBuf>,
+    pub force_overwrite: bool,
 }
