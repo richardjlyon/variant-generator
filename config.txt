@@ -1,0 +1,14 @@
+# HashTest Generator Configuration File
+# Each line defines a transformation to apply
+
+
+
+# Rotation transformations
+# Format: rotate=angle_in_degrees
+rotate=90.0
+rotate=180.0
+rotate=270.0
+rotate=5.0
+rotate=-5.0
+rotate=45.0
+rotate=-45.0
