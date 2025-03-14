@@ -331,6 +331,10 @@ fn process_image(img_path: &Path, config: &Config) -> Result<(), Box<dyn Error>>
     let ext = img_path.extension().unwrap().to_str().unwrap();
     let format = SupportedFormat::from_extension(ext).unwrap();
 
+    // Create a subfolder for this image's variants
+    let image_subfolder = config.output_dir.join(stem);
+    fs::create_dir_all(&image_subfolder)?;
+
     // Load the image
     let img = match format {
         SupportedFormat::HEIC => {
@@ -358,7 +362,7 @@ fn process_image(img_path: &Path, config: &Config) -> Result<(), Box<dyn Error>>
         // Generate output filename
         let transform_name = transformation_name(transform);
         let output_filename = format!("{}_{}_{}.{}", stem, transform_name, i, ext);
-        let output_path = config.output_dir.join(output_filename);
+        let output_path = image_subfolder.join(output_filename);
 
         // Save the transformed image
         save_image(&transformed, &output_path, format)?;
@@ -776,13 +780,17 @@ fn use_stirmark(
 
     drop(img_list);
 
+    // Create a temporary directory for StirMark output
+    let stirmark_temp_dir = output_dir.join("stirmark_temp");
+    fs::create_dir_all(&stirmark_temp_dir)?;
+
     // Run StirMark with common transformations
     let output = ProcessCommand::new(stirmark_path)
         .args(&[
             "-i",
             img_list_path.to_str().unwrap(),
             "-o",
-            output_dir.to_str().unwrap(),
+            stirmark_temp_dir.to_str().unwrap(),
             "-AFFINE",   // Affine transformations
             "-CONV",     // Convolution filters
             "-JPEG",     // JPEG compression
@@ -802,8 +810,42 @@ fn use_stirmark(
         println!("{}", String::from_utf8_lossy(&output.stderr));
     }
 
+    // Move files to appropriate subfolders
+    for entry in fs::read_dir(&stirmark_temp_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Skip if not a file
+        if !path.is_file() {
+            continue;
+        }
+
+        let filename = path.file_name().unwrap().to_str().unwrap();
+
+        // StirMark output files are typically named with the format:
+        // original_TRANSFORM.jpg
+        // We need to extract the original name
+        if let Some(original_name_end) = filename.find('_') {
+            let original_name = &filename[0..original_name_end];
+
+            // Create subfolder if it doesn't exist
+            let subfolder = output_dir.join(original_name);
+            fs::create_dir_all(&subfolder)?;
+
+            // Move the file to the subfolder
+            let target_path = subfolder.join(filename);
+            fs::rename(&path, &target_path)?;
+        } else {
+            // If the filename doesn't follow the expected pattern,
+            // just leave it in the output directory
+            let target_path = output_dir.join(filename);
+            fs::rename(&path, &target_path)?;
+        }
+    }
+
     // Clean up
     fs::remove_file(img_list_path)?;
+    fs::remove_dir_all(stirmark_temp_dir)?;
 
     Ok(())
 }
