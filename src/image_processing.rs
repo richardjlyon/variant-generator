@@ -1,10 +1,12 @@
 use crate::transformations::{apply_transformation, transformation_name};
 use crate::types::{Config, SupportedFormat};
 use image::DynamicImage;
+use rayon::prelude::*;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
     let entries = if config.recursive {
@@ -13,8 +15,30 @@ pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
         find_images(&config.input_dir)?
     };
 
-    for entry in entries {
-        process_image(&entry, &config)?;
+    // Use Arc to share the Config across threads
+    let config = Arc::new(config);
+
+    // Collect any errors that occur during parallel processing
+    let errors = Arc::new(Mutex::new(Vec::<String>::new()));
+
+    // Process images in parallel
+    entries.par_iter().for_each(|entry| {
+        let config = Arc::clone(&config);
+        let errors = Arc::clone(&errors);
+
+        if let Err(e) = process_image(entry, &config) {
+            let mut errors = errors.lock().unwrap();
+            errors.push(format!("Error processing {}: {}", entry.display(), e));
+        }
+    });
+
+    // Check if any errors occurred during parallel processing
+    let locked_errors = errors.lock().unwrap();
+    if !locked_errors.is_empty() {
+        for error in locked_errors.iter() {
+            eprintln!("{}", error);
+        }
+        return Err(format!("Failed to process {} images", locked_errors.len()).into());
     }
 
     // If StirMark is available, use it for additional transformations
@@ -25,7 +49,7 @@ pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn process_image(img_path: &Path, config: &Config) -> Result<(), Box<dyn Error>> {
+pub fn process_image(img_path: &Path, config: &Arc<Config>) -> Result<(), Box<dyn Error>> {
     let filename = img_path.file_name().unwrap().to_str().unwrap();
     let stem = Path::new(filename).file_stem().unwrap().to_str().unwrap();
 
