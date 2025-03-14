@@ -63,15 +63,6 @@ pub fn apply_transformation(
             let (inner_width, inner_height) =
                 calculate_inner_rectangle(img.width(), img.height(), angle_radians);
 
-            println!(
-                "Original dimensions: {}x{}, Inner rectangle: {}x{}, Angle: {}°",
-                img.width(),
-                img.height(),
-                inner_width,
-                inner_height,
-                angle
-            );
-
             // First rotate the image using the imageproc library
             let rotated = rotate_about_center(
                 &rgba,
@@ -87,14 +78,6 @@ pub fn apply_transformation(
             // Calculate the top-left corner of the inner rectangle
             let inner_x = (rotated_center_x - inner_width as f32 / 2.0).floor() as u32;
             let inner_y = (rotated_center_y - inner_height as f32 / 2.0).floor() as u32;
-
-            println!(
-                "Rotated dimensions: {}x{}, Inner rectangle at: ({}, {})",
-                rotated.width(),
-                rotated.height(),
-                inner_x,
-                inner_y
-            );
 
             // Convert rotated ImageBuffer to DynamicImage
             let rotated_img = DynamicImage::ImageRgba8(rotated);
