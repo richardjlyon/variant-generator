@@ -5,10 +5,10 @@
 
 # Rotation transformations
 # Format: rotate=angle_in_degrees
-rotate=90.0
-rotate=180.0
-rotate=270.0
 rotate=5.0
-rotate=-5.0
-rotate=45.0
-rotate=-45.0
+rotate=10.0
+rotate=15.0
+rotate=20.0
+rotate=25.0
+rotate=30.0
+rotate=35.0

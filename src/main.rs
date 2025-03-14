@@ -420,9 +420,41 @@ fn apply_transformation(
         Transformation::Rotate(angle) => {
             // Convert to RGBA8 for rotation
             let rgba = img.to_rgba8();
-
-            // Convert angle to radians and rotate about center
             let angle_radians = angle.to_radians();
+
+            // Handle special cases for multiples of 90 degrees
+            let is_right_angle = is_right_angle_rotation(angle_radians);
+
+            if is_right_angle {
+                // For 90/180/270 degrees, just do the rotation without inner cropping
+                if (angle_radians - PI / 2.0).abs() < 0.01
+                    || (angle_radians - 3.0 * PI / 2.0).abs() < 0.01
+                {
+                    // 90 or 270 degrees - just rotate and swap dimensions
+                    return Ok(img.rotate90());
+                } else if (angle_radians - PI).abs() < 0.01 {
+                    // 180 degrees
+                    return Ok(img.rotate180());
+                } else {
+                    // 0/360 degrees - no change
+                    return Ok(img.clone());
+                }
+            }
+
+            // Calculate the largest inner rectangle dimensions
+            let (inner_width, inner_height) =
+                calculate_inner_rectangle(img.width(), img.height(), angle_radians);
+
+            println!(
+                "Original dimensions: {}x{}, Inner rectangle: {}x{}, Angle: {}°",
+                img.width(),
+                img.height(),
+                inner_width,
+                inner_height,
+                angle
+            );
+
+            // First rotate the image using the imageproc library
             let rotated = rotate_about_center(
                 &rgba,
                 angle_radians,
@@ -430,24 +462,27 @@ fn apply_transformation(
                 image::Rgba([255, 255, 255, 255]), // White background
             );
 
-            let (crop_x, crop_y, crop_width, crop_height) = calculate_rotation_crop(
-                img.width(),
-                img.height(),
-                angle_radians,
+            // Calculate the center of the rotated image
+            let rotated_center_x = rotated.width() as f32 / 2.0;
+            let rotated_center_y = rotated.height() as f32 / 2.0;
+
+            // Calculate the top-left corner of the inner rectangle
+            let inner_x = (rotated_center_x - inner_width as f32 / 2.0).floor() as u32;
+            let inner_y = (rotated_center_y - inner_height as f32 / 2.0).floor() as u32;
+
+            println!(
+                "Rotated dimensions: {}x{}, Inner rectangle at: ({}, {})",
                 rotated.width(),
                 rotated.height(),
+                inner_x,
+                inner_y
             );
 
-            // Step 3: Crop the rotated image to the tight bounding box
             // Convert rotated ImageBuffer to DynamicImage
             let rotated_img = DynamicImage::ImageRgba8(rotated);
 
-            // Apply crop transformation
-            let cropped = apply_transformation(
-                &rotated_img,
-                &Transformation::Crop(crop_x, crop_y, crop_width, crop_height),
-                format,
-            )?;
+            // Crop to the inner rectangle
+            let cropped = rotated_img.crop_imm(inner_x, inner_y, inner_width, inner_height);
 
             Ok(cropped)
         }
@@ -773,114 +808,82 @@ fn use_stirmark(
     Ok(())
 }
 
-/// Calculate the dimensions of an image after rotation
-fn calculate_rotated_dimensions(width: u32, height: u32, angle: f32) -> (u32, u32) {
-    // Convert to f32 for the calculations
-    let width = width as f32;
-    let height = height as f32;
+/// Check if an angle is very close to a multiple of 90 degrees
+fn is_right_angle_rotation(angle: f32) -> bool {
+    let two_pi = 2.0 * PI;
+    let angle_mod = ((angle % two_pi) + two_pi) % two_pi; // Normalize to [0, 2π)
 
-    // Calculate the rotated dimensions using the rotation formula
-    let angle_abs = angle.abs() % (2.0 * PI);
-
-    // Handle quadrant wrap-around
-    let angle_normalized = if angle_abs > PI / 2.0 && angle_abs <= PI {
-        PI - angle_abs
-    } else if angle_abs > PI && angle_abs <= 3.0 * PI / 2.0 {
-        angle_abs - PI
-    } else if angle_abs > 3.0 * PI / 2.0 {
-        2.0 * PI - angle_abs
-    } else {
-        angle_abs
-    };
-
-    let sin = angle_normalized.sin();
-    let cos = angle_normalized.cos();
-
-    // The dimensions of the rotated image
-    let new_width = (width * cos.abs() + height * sin.abs()).ceil() as u32;
-    let new_height = (width * sin.abs() + height * cos.abs()).ceil() as u32;
-
-    (new_width, new_height)
+    // Check if angle is close to 0, 90, 180, or 270 degrees
+    (angle_mod < 0.01)
+        || ((angle_mod - PI / 2.0).abs() < 0.01)
+        || ((angle_mod - PI).abs() < 0.01)
+        || ((angle_mod - 3.0 * PI / 2.0).abs() < 0.01)
+        || ((angle_mod - two_pi).abs() < 0.01)
 }
 
-/// Calculate the crop parameters for a rotated image to remove white space
-fn calculate_rotation_crop(
-    orig_width: u32,
-    orig_height: u32,
-    angle: f32,
-    rotated_width: u32,
-    rotated_height: u32,
-) -> (u32, u32, u32, u32) {
-    // Convert to signed integers for the calculations
-    let width = orig_width as f32;
-    let height = orig_height as f32;
+/// Calculate the largest rectangle that fits inside a rotated rectangle without white space
+fn calculate_inner_rectangle(width: u32, height: u32, angle: f32) -> (u32, u32) {
+    // For special cases of 0, 90, 180, 270 degrees
+    let two_pi = 2.0 * PI;
+    let angle_mod = ((angle % two_pi) + two_pi) % two_pi; // Normalize to [0, 2π)
 
-    // Calculate the center point of the original image
-    let center_x = width / 2.0;
-    let center_y = height / 2.0;
+    if (angle_mod < 0.01 || (angle_mod - two_pi).abs() < 0.01) {
+        // 0 or 360 degrees - no change
+        return (width, height);
+    } else if (angle_mod - PI / 2.0).abs() < 0.01 {
+        // 90 degrees - swap dimensions
+        return (height, width);
+    } else if (angle_mod - PI).abs() < 0.01 {
+        // 180 degrees - no change in dimensions
+        return (width, height);
+    } else if (angle_mod - 3.0 * PI / 2.0).abs() < 0.01 {
+        // 270 degrees - swap dimensions
+        return (height, width);
+    }
 
-    // Calculate the corners of the original image relative to the center
-    let corners = [
-        (-center_x, -center_y), // Top-left
-        (center_x, -center_y),  // Top-right
-        (center_x, center_y),   // Bottom-right
-        (-center_x, center_y),  // Bottom-left
-    ];
+    // Convert dimensions to f32
+    let w = width as f32;
+    let h = height as f32;
 
-    // Rotate the corners
-    let cos = angle.cos();
-    let sin = angle.sin();
-    let rotated_corners: Vec<(f32, f32)> = corners
-        .iter()
-        .map(|(x, y)| {
-            let rx = x * cos - y * sin;
-            let ry = x * sin + y * cos;
-            (rx, ry)
-        })
-        .collect();
+    // Normalize angle to [0, PI/2]
+    let angle_normalized = angle_mod % PI;
+    let angle_normalized = if angle_normalized > PI / 2.0 {
+        PI - angle_normalized
+    } else {
+        angle_normalized
+    };
 
-    // Find the min and max coordinates of the rotated corners
-    let min_x = rotated_corners
-        .iter()
-        .map(|(x, _)| *x)
-        .reduce(f32::min)
-        .unwrap();
-    let max_x = rotated_corners
-        .iter()
-        .map(|(x, _)| *x)
-        .reduce(f32::max)
-        .unwrap();
-    let min_y = rotated_corners
-        .iter()
-        .map(|(_, y)| *y)
-        .reduce(f32::min)
-        .unwrap();
-    let max_y = rotated_corners
-        .iter()
-        .map(|(_, y)| *y)
-        .reduce(f32::max)
-        .unwrap();
+    // Calculate trigonometric values
+    let sin = angle_normalized.sin().abs();
+    let cos = angle_normalized.cos().abs();
 
-    // Calculate the dimensions of the tight bounding box
-    let bbox_width = (max_x - min_x).ceil() as u32;
-    let bbox_height = (max_y - min_y).ceil() as u32;
+    // The largest inscribed rectangle in a rotated rectangle can be calculated as:
+    // For a rectangle with width W and height H rotated by angle θ:
+    // Width of inscribed rectangle = W * cos(θ) - H * sin(θ) * tan(θ)
+    // Height of inscribed rectangle = H * cos(θ) - W * sin(θ) * cot(θ)
 
-    // Calculate the theoretical dimensions of the fully rotated image
-    let (theory_width, theory_height) =
-        calculate_rotated_dimensions(orig_width, orig_height, angle);
+    // For a square, there's a simpler formula:
+    if (w - h).abs() < 0.001 {
+        // Check if it's a square
+        // For squares, the inscribed rectangle has both sides of length:
+        // side = original_side / (cos(θ) + sin(θ))
+        let side = w / (cos + sin);
+        return (side.floor() as u32, side.floor() as u32);
+    }
 
-    // The actual rotated image might have slightly different dimensions due to rounding
-    // We need to adjust the crop coordinates based on the actual rotated image dimensions
+    // For rectangles, we need to compute differently:
+    // Formula from the literature on largest inscribed rectangles within rotated rectangles
+    // This formula works for arbitrary rectangles and angles
+    let cot_theta = cos / sin; // cotangent of the angle
+    let tan_theta = sin / cos; // tangent of the angle
 
-    // Calculate the offset from the edge of the rotated image to the content
-    let offset_x = ((rotated_width as f32 - bbox_width as f32) / 2.0).floor() as u32;
-    let offset_y = ((rotated_height as f32 - bbox_height as f32) / 2.0).floor() as u32;
+    // Calculate width and height of inscribed rectangle
+    let inscribed_width = (w * cos - h * sin * tan_theta).abs();
+    let inscribed_height = (h * cos - w * sin * cot_theta).abs();
 
-    // Make sure our crop stays within the bounds of the rotated image
-    let crop_x = offset_x.min(rotated_width - 1);
-    let crop_y = offset_y.min(rotated_height - 1);
-    let crop_width = bbox_width.min(rotated_width - crop_x);
-    let crop_height = bbox_height.min(rotated_height - crop_y);
-
-    (crop_x, crop_y, crop_width, crop_height)
+    // Floor to ensure we don't exceed the available inner space
+    (
+        inscribed_width.floor() as u32,
+        inscribed_height.floor() as u32,
+    )
 }
