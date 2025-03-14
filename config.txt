@@ -1,14 +1,66 @@
 # HashTest Generator Configuration File
 # Each line defines a transformation to apply
 
-
+# Resizing transformations
+# Format: resize=width,height
+resize=800,600
+resize=400,300
+resize=1200,900
+resize=200,150
+resize=1600,1200
 
 # Rotation transformations
 # Format: rotate=angle_in_degrees
+rotate=90.0
+rotate=180.0
+rotate=270.0
 rotate=5.0
-rotate=10.0
-rotate=15.0
-rotate=20.0
-rotate=25.0
-rotate=30.0
-rotate=35.0
+rotate=-5.0
+rotate=45.0
+rotate=-45.0
+
+# Flip transformations
+# Format: flip_horizontal=true|false, flip_vertical=true|false
+flip_horizontal=true
+flip_vertical=true
+
+# Cropping transformations
+# Format: crop=x,y,width,height
+# Note: crop=0,0,0,0 means auto-crop 20% from each side
+crop=0,0,0,0
+crop=100,100,400,300
+
+# Blur transformations
+# Format: blur=sigma
+blur=1.0
+blur=2.0
+blur=3.0
+blur=5.0
+
+# Noise transformations
+# Format: noise=amount (0.0-1.0)
+noise=0.05
+noise=0.1
+noise=0.2
+
+# JPEG Compression quality
+# Format: compression=quality (0-100)
+compression=90
+compression=70
+compression=50
+compression=30
+compression=10
+
+# Brightness adjustments
+# Format: brightness=factor (0.0-2.0, 1.0 is normal)
+brightness=1.2
+brightness=0.8
+brightness=1.5
+brightness=0.5
+
+# Contrast adjustments
+# Format: contrast=factor (0.0-2.0, 1.0 is normal)
+contrast=1.2
+contrast=0.8
+contrast=1.5
+contrast=0.5

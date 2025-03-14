@@ -2,6 +2,10 @@
 
 A Rust command-line utility for generating image variants to test perceptual hashing algorithms and image processing systems. This tool processes JPEG, PNG, TIFF, and optionally HEIC formats, applying various transformations that are useful for evaluating the robustness of perceptual hashing algorithms or generating training data for computer vision models.
 
+![](/docs/2024-10-27-1.jpg)
+
+![](/docs/2024-10-27-1_blur_3_12.jpg)
+
 ## Features
 
 - **Multi-format Support**: Process JPEG, PNG, TIFF, and HEIC images (HEIC requires optional compilation with the `heic` feature)
