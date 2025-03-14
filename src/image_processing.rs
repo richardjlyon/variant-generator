@@ -10,14 +10,24 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 /// Struct to track processing statistics during image transformation
+///
+/// This structure keeps track of various metrics during the image processing operation,
+/// including counts of processed images, transformation attempts, and any errors encountered.
 #[derive(Default, Clone)]
 struct ProcessingStats {
+    /// Total number of images found for processing
     total_images: usize,
+    /// Number of successfully processed images
     successful_images: usize,
+    /// Number of images that failed to process
     failed_images: usize,
+    /// Total number of transformations to be applied
     total_transformations: usize,
+    /// Number of transformations successfully applied
     successful_transformations: usize,
+    /// Number of transformations that failed to apply
     failed_transformations: usize,
+    /// Collection of error messages encountered during processing
     errors: Vec<String>,
 }
 
@@ -37,6 +47,24 @@ struct ProcessingStats {
 /// # Returns
 ///
 /// * `Result<(), Box<dyn Error>>` - Success or an error with description
+///
+/// # Example
+///
+/// ```
+/// use variant_generator::{Config, process_images};
+/// use std::path::PathBuf;
+///
+/// let config = Config {
+///     input_dir: PathBuf::from("./images"),
+///     output_dir: PathBuf::from("./variants"),
+///     transformations: vec![], // Add transformations as needed
+///     recursive: true,
+///     stirmark_path: None,
+///     force_overwrite: false,
+/// };
+///
+/// process_images(config).expect("Failed to process images");
+/// ```
 pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
     let entries = if config.recursive {
         find_images_recursive(&config.input_dir)?
@@ -127,6 +155,11 @@ pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
 
 /// Print a summary report of the image processing results
 ///
+/// Outputs detailed statistics about the processing job including:
+/// - Total, successful, and failed image counts
+/// - Total, successful, and failed transformation counts
+/// - Error messages if any were encountered
+///
 /// # Arguments
 ///
 /// * `stats` - The processing statistics to report
@@ -157,6 +190,9 @@ fn print_summary_report(stats: &ProcessingStats) {
 /// 2. Loads the image (with special handling for HEIC if enabled)
 /// 3. Applies each transformation and saves the result
 /// 4. Updates progress and statistics
+///
+/// Each transformed image will be saved with a filename indicating the
+/// transformation applied and an index.
 ///
 /// # Arguments
 ///
@@ -271,6 +307,9 @@ fn process_image(
 
 /// Find images in a directory (non-recursive)
 ///
+/// Scans the specified directory for files with supported image extensions
+/// and returns a list of their paths.
+///
 /// # Arguments
 ///
 /// * `dir` - Directory path to search for images
@@ -278,6 +317,16 @@ fn process_image(
 /// # Returns
 ///
 /// * `Result<Vec<PathBuf>, Box<dyn Error>>` - List of image paths or an error
+///
+/// # Example
+///
+/// ```
+/// use variant_generator::image_processing::find_images;
+/// use std::path::Path;
+///
+/// let images = find_images(Path::new("./images")).expect("Failed to find images");
+/// println!("Found {} images", images.len());
+/// ```
 pub fn find_images(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let mut results = Vec::new();
 
@@ -318,6 +367,9 @@ pub fn find_images(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
 
 /// Find images recursively in a directory and its subdirectories
 ///
+/// Recursively scans the specified directory and all its subdirectories
+/// for files with supported image extensions.
+///
 /// # Arguments
 ///
 /// * `dir` - Directory path to search for images recursively
@@ -325,6 +377,16 @@ pub fn find_images(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
 /// # Returns
 ///
 /// * `Result<Vec<PathBuf>, Box<dyn Error>>` - List of image paths or an error
+///
+/// # Example
+///
+/// ```
+/// use variant_generator::image_processing::find_images_recursive;
+/// use std::path::Path;
+///
+/// let images = find_images_recursive(Path::new("./images")).expect("Failed to find images");
+/// println!("Found {} images in all subdirectories", images.len());
+/// ```
 pub fn find_images_recursive(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let mut results = Vec::new();
 
@@ -376,6 +438,9 @@ pub fn find_images_recursive(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>>
 }
 
 /// Save an image to disk in the specified format
+///
+/// Handles different image formats appropriately, including special processing
+/// for JPEG (converting to RGB8) and HEIC when the feature is enabled.
 ///
 /// # Arguments
 ///
@@ -449,7 +514,9 @@ pub fn save_image(
 
 /// Convert a HEIC image to a DynamicImage
 ///
-/// This function is only available when the "heic" feature is enabled.
+/// Handles the conversion of HEIC format images to the DynamicImage format
+/// used by the image crate. This function is only available when the "heic"
+/// feature is enabled.
 ///
 /// # Arguments
 ///
@@ -530,7 +597,8 @@ fn convert_heic_to_dynamic_image(path: &Path) -> Result<DynamicImage, Box<dyn Er
 
 /// Save an image in HEIC format
 ///
-/// This function is only available when the "heic" feature is enabled.
+/// Encodes and saves an image in HEIC format. This function is only
+/// available when the "heic" feature is enabled.
 ///
 /// # Arguments
 ///
@@ -630,7 +698,10 @@ fn save_as_heic(img: &DynamicImage, path: &Path) -> Result<(), Box<dyn Error>> {
 /// Use StirMark for additional image transformations
 ///
 /// StirMark is an external tool for applying various transformations to images,
-/// particularly useful for testing watermarking algorithms.
+/// particularly useful for testing watermarking algorithms. This function:
+/// 1. Creates a list of JPEG images to process
+/// 2. Runs the StirMark executable with appropriate arguments
+/// 3. Organizes the output files into the variant structure
 ///
 /// # Arguments
 ///
