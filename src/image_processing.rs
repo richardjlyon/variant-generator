@@ -1,6 +1,7 @@
 use crate::transformations::{apply_transformation, transformation_name};
 use crate::types::{Config, SupportedFormat};
 use image::DynamicImage;
+use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::error::Error;
 use std::fs;
@@ -16,8 +17,18 @@ pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
     };
 
     if entries.is_empty() {
+        println!("No images found in the input directory.");
         return Ok(());
     }
+
+    // Calculate total number of transformations
+    let total_transformations = entries.len() * config.transformations.len();
+    println!(
+        "Found {} images with {} transformations each ({} total steps).",
+        entries.len(),
+        config.transformations.len(),
+        total_transformations
+    );
 
     // Use Arc to share the Config across threads
     let config = Arc::new(config);
@@ -25,16 +36,37 @@ pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
     // Collect any errors that occur during parallel processing
     let errors = Arc::new(Mutex::new(Vec::<String>::new()));
 
+    // Setup a single progress bar for all transformations
+    let progress_bar = ProgressBar::new(total_transformations as u64);
+    progress_bar.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} transformations ({eta}) - {msg}")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    progress_bar.set_message("Starting...");
+
+    let progress = Arc::new(Mutex::new(progress_bar));
+
     // Process images in parallel
     entries.par_iter().for_each(|entry| {
         let config = Arc::clone(&config);
         let errors = Arc::clone(&errors);
+        let progress = Arc::clone(&progress);
 
-        if let Err(e) = process_image(entry, &config) {
+        let filename = entry.file_name().unwrap().to_str().unwrap();
+
+        if let Err(e) = process_image(entry, &config, &progress) {
             let mut errors = errors.lock().unwrap();
             errors.push(format!("Error processing {}: {}", entry.display(), e));
         }
     });
+
+    // Ensure progress bar is finished
+    progress
+        .lock()
+        .unwrap()
+        .finish_with_message("All transformations completed");
 
     // Check if any errors occurred during parallel processing
     let locked_errors = errors.lock().unwrap();
@@ -53,7 +85,11 @@ pub fn process_images(config: Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn process_image(img_path: &Path, config: &Arc<Config>) -> Result<(), Box<dyn Error>> {
+pub fn process_image(
+    img_path: &Path,
+    config: &Arc<Config>,
+    progress: &Arc<Mutex<ProgressBar>>,
+) -> Result<(), Box<dyn Error>> {
     let filename = img_path.file_name().unwrap().to_str().unwrap();
     let stem = Path::new(filename).file_stem().unwrap().to_str().unwrap();
 
@@ -84,20 +120,32 @@ pub fn process_image(img_path: &Path, config: &Arc<Config>) -> Result<(), Box<dy
     for (i, transform) in config.transformations.iter().enumerate() {
         let transform_name = transformation_name(transform);
 
+        // Update the progress bar message
+        let mut progress_bar = progress.lock().unwrap();
+        progress_bar.set_message(format!("{} ({})", filename, transform_name));
+
         // Generate output filename
         let output_filename = format!("{}_{}_{}.{}", stem, transform_name, i, ext);
         let output_path = image_subfolder.join(&output_filename);
 
         // Skip if the file already exists (useful for resuming interrupted operations)
         if output_path.exists() && !config.force_overwrite {
+            progress_bar.inc(1);
+            drop(progress_bar); // Release the lock
             continue;
         }
+
+        // Release the lock while processing
+        drop(progress_bar);
 
         // Apply the transformation
         let transformed = apply_transformation(&img, transform, &format)?;
 
         // Save the transformed image
         save_image(&transformed, &output_path, format)?;
+
+        // Increment the progress bar
+        progress.lock().unwrap().inc(1);
     }
 
     Ok(())
