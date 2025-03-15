@@ -316,32 +316,30 @@ pub fn apply_transformation(
 pub fn default_transformations() -> Vec<Transformation> {
     vec![
         // Resizing with different filters
-        Transformation::Resize(800, 600), // Uses default CatmullRom (medium quality, good speed)
-        Transformation::ResizeWithFilter(800, 600, ResizeFilter::Nearest), // Fastest
-        Transformation::ResizeWithFilter(800, 600, ResizeFilter::Lanczos3), // Highest quality
-        Transformation::ResizeWithFilter(400, 300, ResizeFilter::Triangle), // Good balance
+        // Uses default CatmullRom (medium quality, good speed)
+        Transformation::Resize(300, 200),
+        Transformation::Resize(800, 600),
         Transformation::Resize(1200, 900),
         // Rotations
         Transformation::Rotate(90.0),
         Transformation::Rotate(180.0),
         Transformation::Rotate(270.0),
         Transformation::Rotate(5.0),
-        Transformation::Rotate(-5.0),
         // Flips
         Transformation::Flip(true),  // Horizontal
         Transformation::Flip(false), // Vertical
         // Cropping (percentage-based, adjusted at runtime)
         Transformation::Crop(0, 0, 0, 0), // Placeholder, will adjust based on image size
         // Blur
-        Transformation::Blur(1.0),
-        Transformation::Blur(3.0),
+        Transformation::Blur(0.5),
+        Transformation::Blur(1.5),
         // Noise
         Transformation::Noise(0.1),
         Transformation::Noise(0.2),
         // JPEG Compression quality
-        Transformation::Compression(90),
-        Transformation::Compression(50),
-        Transformation::Compression(20),
+        Transformation::Compression(90), // Heavy
+        Transformation::Compression(50), // Moderate
+        Transformation::Compression(20), // Light
         // Brightness/Contrast
         Transformation::Brightness(1.2),
         Transformation::Brightness(0.8),
