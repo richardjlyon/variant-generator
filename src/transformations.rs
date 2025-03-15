@@ -70,6 +70,94 @@
 /// - `Transformation::Crop(width/4, height/4, width/2, height/2)`: Center crop to 50% of original size
 /// - `Transformation::Crop(0, 0, 0, 0)`: Automatic center crop to 60% of original size
 ///
+/// ## Compression Quality Guide
+///
+/// The compression transformation controls the quality-to-size ratio for JPEG images:
+///
+/// ```rust
+/// Transformation::Compression(quality)
+/// ```
+///
+/// The `quality` parameter accepts values from 0 to 100:
+///
+/// | Quality Range | Compression | File Size | Visual Quality | Use Case |
+/// |---------------|-------------|-----------|----------------|----------|
+/// | 90-100        | Minimal     | Largest   | Near lossless  | Professional photography, archiving |
+/// | 70-89         | Light       | Large     | Excellent      | High-quality photography, printing |
+/// | 50-69         | Moderate    | Medium    | Good           | Web images, general purpose |
+/// | 20-49         | Heavy       | Small     | Fair           | Thumbnails, previews, storage optimization |
+/// | 0-19          | Extreme     | Smallest  | Poor           | Maximum space saving, significant artifacts |
+///
+/// ### Example Use Cases
+///
+/// - `Transformation::Compression(90)`: High quality (low compression) - minimal visual artifacts
+/// - `Transformation::Compression(50)`: Medium quality - good balance of quality and file size
+/// - `Transformation::Compression(20)`: Low quality (high compression) - noticeable artifacts but smallest file size
+///
+/// Note: Compression is only applied to JPEG images. For other formats, the compression setting
+/// is ignored during transformation but may be applied at save time depending on the format.
+///
+/// ## Blur Strength Guide
+///
+/// The blur transformation applies a Gaussian blur to the image:
+///
+/// ```rust
+/// Transformation::Blur(sigma)
+/// ```
+///
+/// The `sigma` parameter represents the standard deviation of the Gaussian blur kernel:
+///
+/// | Sigma Range | Blur Strength | Visual Effect | Use Case |
+/// |-------------|---------------|---------------|----------|
+/// | 0.1-0.5     | Very Subtle   | Minimal smoothing | Reducing minor noise, subtle softening |
+/// | 0.5-1.5     | Light         | Noticeable smoothing | Portrait softening, removing small imperfections |
+/// | 1.5-3.0     | Moderate      | Soft focus effect | Depth of field simulation, background softening |
+/// | 3.0-5.0     | Strong        | Heavy blurring | Creative effects, privacy masking |
+/// | 5.0+        | Extreme       | Very diffused | Abstract effects, heavy obfuscation |
+///
+/// ### Performance Considerations
+///
+/// - The computational cost increases with higher sigma values
+/// - Blur operations on larger images take significantly more time
+/// - For very large blurs, consider downscaling the image first, applying the blur, then upscaling
+///
+/// ### Example Use Cases
+///
+/// - `Transformation::Blur(1.0)`: Light blur - smooths minor imperfections while preserving details
+/// - `Transformation::Blur(3.0)`: Moderate blur - creates a dreamy, soft focus effect
+/// - `Transformation::Blur(8.0)`: Extreme blur - creates an abstract, heavily diffused image
+///
+/// ## Noise Effect Guide
+///
+/// The noise transformation adds random pixel variations to create various effects:
+///
+/// ```rust
+/// Transformation::Noise(amount)
+/// ```
+///
+/// The `amount` parameter controls the intensity of the noise effect:
+///
+/// | Amount Range | Noise Level | Visual Effect | Use Case |
+/// |--------------|-------------|---------------|----------|
+/// | 0.01-0.05    | Minimal     | Subtle grain  | Film simulation, vintage effects |
+/// | 0.05-0.15    | Light       | Noticeable texture | Creative texturing, film grain |
+/// | 0.15-0.25    | Moderate    | Significant noise | Artistic effects, stylization |
+/// | 0.25-0.5     | Strong      | Heavy distortion | Abstract effects, glitch art |
+/// | 0.5+         | Extreme     | Image degradation | Special effects, distortion art |
+///
+/// ### How It Works
+///
+/// - Noise is applied to each RGB channel independently (alpha is preserved)
+/// - The noise amount determines the maximum possible pixel value change (±amount*127.5)
+/// - Both positive and negative noise is applied, creating lighter and darker spots
+/// - All pixel values are clamped to valid range (0-255)
+///
+/// ### Example Use Cases
+///
+/// - `Transformation::Noise(0.1)`: Light noise - adds subtle film grain or texture
+/// - `Transformation::Noise(0.2)`: Moderate noise - creates a more pronounced grainy effect
+/// - `Transformation::Noise(0.4)`: Strong noise - produces a heavily distorted, artistic look
+///
 use crate::types::{ResizeFilter, SupportedFormat, Transformation};
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
