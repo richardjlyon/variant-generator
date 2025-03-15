@@ -206,30 +206,26 @@ pub fn apply_transformation(
             let rgba = img.to_rgba8();
             let angle_radians = angle.to_radians();
 
-            // Handle special cases for multiples of 90 degrees
-            let is_right_angle = is_right_angle_rotation(angle_radians);
+            // Handle multiples of 90 degrees efficiently using built-in functions
+            // Checking with small epsilon for floating point comparison
+            let epsilon = 0.001;
+            let normalized_angle = angle_radians % (2.0 * PI);
 
-            if is_right_angle {
-                // For 90/180/270 degrees, just do the rotation without inner cropping
-                if (angle_radians - PI / 2.0).abs() < 0.01
-                    || (angle_radians - 3.0 * PI / 2.0).abs() < 0.01
-                {
-                    // 90 or 270 degrees - just rotate and swap dimensions
-                    return Ok(img.rotate90());
-                } else if (angle_radians - PI).abs() < 0.01 {
-                    // 180 degrees
-                    return Ok(img.rotate180());
-                } else {
-                    // 0/360 degrees - no change
-                    return Ok(img.clone());
-                }
+            if (normalized_angle - 0.0).abs() < epsilon
+                || (normalized_angle - 2.0 * PI).abs() < epsilon
+            {
+                return Ok(img.clone()); // 0 or 360 degrees - no change
+            } else if (normalized_angle - PI / 2.0).abs() < epsilon {
+                return Ok(img.rotate90()); // 90 degrees
+            } else if (normalized_angle - PI).abs() < epsilon {
+                return Ok(img.rotate180()); // 180 degrees
+            } else if (normalized_angle - 3.0 * PI / 2.0).abs() < epsilon {
+                return Ok(img.rotate270()); // 270 degrees
             }
 
-            // Calculate the largest inner rectangle dimensions
-            let (inner_width, inner_height) =
-                calculate_inner_rectangle(img.width(), img.height(), angle_radians);
+            // For all other angles, use consistent approach with inner bounding box
 
-            // First rotate the image using the imageproc library
+            // First rotate the full image
             let rotated = rotate_about_center(
                 &rgba,
                 angle_radians,
@@ -237,22 +233,31 @@ pub fn apply_transformation(
                 image::Rgba([255, 255, 255, 255]), // White background
             );
 
-            // Calculate the center of the rotated image
-            let rotated_center_x = rotated.width() as f32 / 2.0;
-            let rotated_center_y = rotated.height() as f32 / 2.0;
-
-            // Calculate the top-left corner of the inner rectangle
-            let inner_x = (rotated_center_x - inner_width as f32 / 2.0).floor() as u32;
-            let inner_y = (rotated_center_y - inner_height as f32 / 2.0).floor() as u32;
-
             // Convert rotated ImageBuffer to DynamicImage
             let rotated_img = DynamicImage::ImageRgba8(rotated);
+
+            // Calculate the inner bounding box dimensions
+            let (inner_width, inner_height) =
+                calculate_inner_rectangle(img.width(), img.height(), angle_radians);
+
+            // Calculate the center of the rotated image
+            let rotated_center_x = rotated_img.width() as f32 / 2.0;
+            let rotated_center_y = rotated_img.height() as f32 / 2.0;
+
+            // Calculate the top-left corner of the inner rectangle
+            let inner_x = (rotated_center_x - inner_width as f32 / 2.0).round() as u32;
+            let inner_y = (rotated_center_y - inner_height as f32 / 2.0).round() as u32;
+
+            // Ensure we don't go out of bounds
+            let inner_x = inner_x.min(rotated_img.width().saturating_sub(inner_width));
+            let inner_y = inner_y.min(rotated_img.height().saturating_sub(inner_height));
 
             // Crop to the inner rectangle
             let cropped = rotated_img.crop_imm(inner_x, inner_y, inner_width, inner_height);
 
             Ok(cropped)
         }
+
         Transformation::Flip(horizontal) => {
             if *horizontal {
                 Ok(img.fliph())
@@ -459,68 +464,43 @@ pub fn is_right_angle_rotation(angle: f32) -> bool {
 }
 
 /// Calculate the largest rectangle that fits inside a rotated rectangle without white space
-pub fn calculate_inner_rectangle(width: u32, height: u32, angle: f32) -> (u32, u32) {
-    // For special cases of 0, 90, 180, 270 degrees
-    let two_pi = 2.0 * PI;
-    let angle_mod = ((angle % two_pi) + two_pi) % two_pi; // Normalize to [0, 2π)
 
-    if angle_mod < 0.01 || (angle_mod - two_pi).abs() < 0.01 {
-        // 0 or 360 degrees - no change
-        return (width, height);
-    } else if (angle_mod - PI / 2.0).abs() < 0.01 {
-        // 90 degrees - swap dimensions
-        return (height, width);
-    } else if (angle_mod - PI).abs() < 0.01 {
-        // 180 degrees - no change in dimensions
-        return (width, height);
-    } else if (angle_mod - 3.0 * PI / 2.0).abs() < 0.01 {
-        // 270 degrees - swap dimensions
-        return (height, width);
-    }
+// Correct implementation of inner rectangle calculation
+fn calculate_inner_rectangle(width: u32, height: u32, angle_radians: f32) -> (u32, u32) {
+    let width = width as f32;
+    let height = height as f32;
 
-    // Convert dimensions to f32
-    let w = width as f32;
-    let h = height as f32;
-
-    // Normalize angle to [0, PI/2]
-    let angle_normalized = angle_mod % PI;
-    let angle_normalized = if angle_normalized > PI / 2.0 {
-        PI - angle_normalized
+    // Normalize angle to [0, π/2] since the problem is symmetric
+    let normalized_angle = angle_radians.abs() % (PI * 2.0);
+    let normalized_angle = if normalized_angle > PI {
+        normalized_angle - PI
     } else {
-        angle_normalized
+        normalized_angle
+    };
+    let normalized_angle = if normalized_angle > PI / 2.0 {
+        PI - normalized_angle
+    } else {
+        normalized_angle
     };
 
-    // Calculate trigonometric values
-    let sin = angle_normalized.sin().abs();
-    let cos = angle_normalized.cos().abs();
+    let cos_angle = normalized_angle.cos();
+    let sin_angle = normalized_angle.sin();
 
-    // The largest inscribed rectangle in a rotated rectangle can be calculated as:
-    // For a rectangle with width W and height H rotated by angle θ:
-    // Width of inscribed rectangle = W * cos(θ) - H * sin(θ) * tan(θ)
-    // Height of inscribed rectangle = H * cos(θ) - W * sin(θ) * cot(θ)
-
-    // For a square, there's a simpler formula:
-    if (w - h).abs() < 0.001 {
-        // Check if it's a square
-        // For squares, the inscribed rectangle has both sides of length:
-        // side = original_side / (cos(θ) + sin(θ))
-        let side = w / (cos + sin);
-        return (side.floor() as u32, side.floor() as u32);
+    // Handle division by zero
+    if sin_angle.abs() < 0.001 {
+        return (width as u32, height as u32);
+    }
+    if cos_angle.abs() < 0.001 {
+        return (height as u32, width as u32);
     }
 
-    // For rectangles, we need to compute differently:
-    // Formula from the literature on largest inscribed rectangles within rotated rectangles
-    // This formula works for arbitrary rectangles and angles
-    let cot_theta = cos / sin; // cotangent of the angle
-    let tan_theta = sin / cos; // tangent of the angle
+    // Standard formula for inner bounding box calculation
+    let inner_width = width * cos_angle - height * sin_angle;
+    let inner_height = height * cos_angle - width * sin_angle;
 
-    // Calculate width and height of inscribed rectangle
-    let inscribed_width = (w * cos - h * sin * tan_theta).abs();
-    let inscribed_height = (h * cos - w * sin * cot_theta).abs();
-
-    // Floor to ensure we don't exceed the available inner space
+    // Ensure dimensions are at least 1 pixel and handle negative values
     (
-        inscribed_width.floor() as u32,
-        inscribed_height.floor() as u32,
+        (inner_width.abs().max(1.0)) as u32,
+        (inner_height.abs().max(1.0)) as u32,
     )
 }

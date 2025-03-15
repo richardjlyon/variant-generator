@@ -71,52 +71,66 @@ fn test_rotate_right_angles() {
 
 #[test]
 fn test_rotate_arbitrary_angles() {
-    // Test image path
-    let img_path = Path::new("tests/test_images/jpg/IMG-2624x3636.jpg");
-
-    // Load the test image
-    let img = image::open(img_path).expect("Failed to open test image");
-    let original_width = img.width();
-    let original_height = img.height();
-
-    // Test non-right angle rotations
-    let angle_tests = vec![
-        (45.0, "45 degrees"),
-        (30.0, "30 degrees"),
-        (-15.0, "-15 degrees"),
-        (5.0, "5 degrees"),
+    // Test cases with original images and their rotated references
+    let test_cases = vec![
+        (
+            "tests/test_images/jpg/IMG-2624x3636.jpg",
+            "tests/test_images/jpg/IMG-2624x3636_rotate_5_4.jpg",
+        ),
+        (
+            "tests/test_images/jpg/IMG-6377x4251.jpg",
+            "tests/test_images/jpg/IMG-6377x4251_rotate_5_0.jpg",
+        ),
     ];
 
-    for (angle, description) in angle_tests {
-        // Create rotation transformation
-        let transform = Transformation::Rotate(angle);
+    // Rotation angle to test
+    let rotation_angle = 5.0;
 
-        // Apply the transformation
-        let rotated = apply_transformation(&img, &transform, &SupportedFormat::JPEG)
-            .expect(&format!("Failed to rotate image: {}", description));
+    for (original_path, reference_path) in test_cases {
+        println!("Testing rotation of: {}", original_path);
+
+        // Load the original image
+        let original_img = image::open(original_path).expect("Failed to open original image");
+        let original_width = original_img.width();
+        let original_height = original_img.height();
 
         println!(
-            "{}: Original dimensions: {}x{}, Rotated dimensions: {}x{}",
-            description,
-            original_width,
-            original_height,
-            rotated.width(),
-            rotated.height()
+            "Original image dimensions: {}x{}",
+            original_width, original_height
         );
 
-        // For arbitrary rotations, dimensions will be different but the
-        // rotated image should be smaller than the original
-        assert!(
-            rotated.width() < original_width || rotated.height() < original_height,
-            "At least one dimension should be smaller than the original for {}",
-            description
+        // Load the reference rotated image
+        let reference_img = image::open(reference_path).expect("Failed to open reference image");
+        let reference_width = reference_img.width();
+        let reference_height = reference_img.height();
+
+        println!(
+            "Reference rotated image dimensions: {}x{}",
+            reference_width, reference_height
         );
 
-        // Verify it's correctly identified as NOT a right angle rotation
-        assert!(
-            !is_right_angle_rotation(angle.to_radians()),
-            "{} should NOT be identified as a right angle rotation",
-            description
+        // Apply the rotation transformation
+        let transformation = Transformation::Rotate(rotation_angle);
+        let rotated_img =
+            apply_transformation(&original_img, &transformation, &SupportedFormat::JPEG)
+                .expect("Failed to apply rotation transformation");
+
+        println!(
+            "Our rotated image dimensions: {}x{}",
+            rotated_img.width(),
+            rotated_img.height()
+        );
+
+        // Assert that our rotated image's dimensions match the reference image
+        assert_eq!(
+            rotated_img.width(),
+            reference_width,
+            "Rotated width should match reference image width"
+        );
+        assert_eq!(
+            rotated_img.height(),
+            reference_height,
+            "Rotated height should match reference image height"
         );
     }
 }

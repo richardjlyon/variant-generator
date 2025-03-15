@@ -242,6 +242,22 @@ fn process_image(
         },
     };
 
+    // Save a copy of the original image in the subfolder with '_original' suffix
+    let original_filename = format!("{}_original.{}", stem, ext);
+    let original_path = image_subfolder.join(&original_filename);
+
+    // Only save if it doesn't exist or force_overwrite is true
+    if !original_path.exists() || config.force_overwrite {
+        if let Err(e) = save_image(&img, &original_path, format) {
+            let mut stats = stats.lock().unwrap();
+            stats.errors.push(format!(
+                "Error saving original copy for {}: {}",
+                filename, e
+            ));
+            // We'll continue despite this error
+        }
+    }
+
     // Apply each transformation and save the result
     for (i, transform) in config.transformations.iter().enumerate() {
         let transform_name = transformation_name(transform);
