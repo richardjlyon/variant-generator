@@ -1,0 +1,33 @@
+# Resizing
+resize=800,600
+resize=400,300
+
+# Rotations
+rotate=90.0
+rotate=5.0
+
+# Flips
+flip_horizontal=true
+flip_vertical=true
+
+# Cropping (x, y, width, height)
+crop=10,10,500,500
+
+# Blur
+blur=1.0
+blur=3.0
+
+# Noise (0.0-1.0)
+noise=0.1
+noise=0.4
+
+# Compression quality (JPEG) - value from 1-100
+compression=80
+compression=50
+compression=20
+
+# Brightness/contrast adjustment - values above 1.0 increase, below 1.0 decrease
+brightness=1.2
+brightness=0.8
+contrast=1.2
+contrast=0.8

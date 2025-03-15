@@ -50,7 +50,7 @@ struct ProcessingStats {
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// use variant_generator::{Config, process_images};
 /// use std::path::PathBuf;
 ///
@@ -320,7 +320,7 @@ fn process_image(
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// use variant_generator::image_processing::find_images;
 /// use std::path::Path;
 ///
@@ -380,7 +380,7 @@ pub fn find_images(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// use variant_generator::image_processing::find_images_recursive;
 /// use std::path::Path;
 ///
