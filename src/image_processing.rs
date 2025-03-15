@@ -3,6 +3,7 @@ use crate::types::{Config, SupportedFormat};
 use image::DynamicImage;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,6 +40,9 @@ struct ProcessingStats {
 /// 3. Tracks and reports progress with a progress bar
 /// 4. Generates a summary report of processing results
 /// 5. Optionally runs StirMark for additional transformations if configured
+///
+/// When processing images recursively, the original directory structure from
+/// the input directory is preserved in the output directory.
 ///
 /// # Arguments
 ///
@@ -186,13 +190,14 @@ fn print_summary_report(stats: &ProcessingStats) {
 /// Process a single image with all configured transformations
 ///
 /// This function:
-/// 1. Creates a subfolder for the image's variants
+/// 1. Creates a subfolder for the image's variants (preserving the original directory structure)
 /// 2. Loads the image (with special handling for HEIC if enabled)
 /// 3. Applies each transformation and saves the result
 /// 4. Updates progress and statistics
 ///
 /// Each transformed image will be saved with a filename indicating the
-/// transformation applied and an index.
+/// transformation applied and an index. The original directory structure from
+/// the input directory is preserved in the output directory.
 ///
 /// # Arguments
 ///
@@ -219,8 +224,17 @@ fn process_image(
         None => return Err(format!("Unsupported file format: {}", ext).into()),
     };
 
-    // Create a subfolder for this image's variants
-    let image_subfolder = config.output_dir.join(stem);
+    // Determine the relative path from the input directory to preserve directory structure
+    let relative_path = if let Ok(rel_path) = img_path.strip_prefix(&config.input_dir) {
+        rel_path.parent().unwrap_or_else(|| Path::new(""))
+    } else {
+        // If strip_prefix fails, we're probably dealing with absolute paths
+        // Just use the parent directory of the image
+        img_path.parent().unwrap_or_else(|| Path::new(""))
+    };
+
+    // Create a subfolder for this image's variants, preserving the original directory structure
+    let image_subfolder = config.output_dir.join(relative_path).join(stem);
     fs::create_dir_all(&image_subfolder)?;
 
     // Load the image
@@ -711,6 +725,7 @@ fn save_as_heic(img: &DynamicImage, path: &Path) -> Result<(), Box<dyn Error>> {
 /// 1. Creates a list of JPEG images to process
 /// 2. Runs the StirMark executable with appropriate arguments
 /// 3. Organizes the output files into the variant structure
+/// 4. Preserves the original directory structure from the input directory
 ///
 /// # Arguments
 ///
@@ -813,6 +828,21 @@ pub fn use_stirmark(
     let mut success_count = 0;
     let mut error_count = 0;
 
+    // Create a mapping of image filenames to their original relative paths
+    let mut filename_to_relative_path = HashMap::new();
+    for path in &jpeg_entries {
+        let filename = path.file_name().unwrap().to_str().unwrap();
+        let stem = Path::new(filename).file_stem().unwrap().to_str().unwrap();
+
+        let relative_path = if let Ok(rel_path) = path.strip_prefix(input_dir) {
+            rel_path.parent().unwrap_or_else(|| Path::new(""))
+        } else {
+            path.parent().unwrap_or_else(|| Path::new(""))
+        };
+
+        filename_to_relative_path.insert(stem.to_string(), relative_path.to_path_buf());
+    }
+
     if let Ok(entries) = fs::read_dir(&stirmark_temp_dir) {
         for entry in entries {
             if let Ok(entry) = entry {
@@ -831,8 +861,14 @@ pub fn use_stirmark(
                 if let Some(original_name_end) = filename.find('_') {
                     let original_name = &filename[0..original_name_end];
 
-                    // Create subfolder if it doesn't exist
-                    let subfolder = output_dir.join(original_name);
+                    // Get the relative path for this original name
+                    let relative_path = filename_to_relative_path
+                        .get(original_name)
+                        .cloned()
+                        .unwrap_or_else(|| PathBuf::new());
+
+                    // Create subfolder if it doesn't exist, preserving directory structure
+                    let subfolder = output_dir.join(&relative_path).join(original_name);
                     if let Err(e) = fs::create_dir_all(&subfolder) {
                         println!(
                             "Warning: Failed to create directory {}: {}",
