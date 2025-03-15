@@ -1,6 +1,7 @@
 use std::path::Path;
+use std::time::Instant;
 use variant_generator::transformations::apply_transformation;
-use variant_generator::types::{SupportedFormat, Transformation};
+use variant_generator::types::{ResizeFilter, SupportedFormat, Transformation};
 
 #[test]
 fn test_resize() {
@@ -160,6 +161,51 @@ fn test_resize_with_different_aspect_ratios() {
             "At least one dimension should match the target: {}x{} (actual: {}x{})",
             width,
             height,
+            resized.width(),
+            resized.height()
+        );
+    }
+}
+
+#[test]
+fn test_resize_performance_comparison() {
+    // Test image path
+    let img_path = Path::new("tests/test_images/jpg/IMG-2624x3636.jpg");
+
+    // Load the test image
+    let img = image::open(img_path).expect("Failed to open test image");
+    let target_width = 800;
+    let target_height = 600;
+
+    // Test different filter types
+    let filters = vec![
+        ("Nearest (fastest)", ResizeFilter::Nearest),
+        ("Triangle", ResizeFilter::Triangle),
+        ("CatmullRom (balanced)", ResizeFilter::CatmullRom),
+        ("Gaussian", ResizeFilter::Gaussian),
+        ("Lanczos3 (highest quality)", ResizeFilter::Lanczos3),
+    ];
+
+    println!(
+        "\nResize Performance Comparison ({}x{}):",
+        target_width, target_height
+    );
+    println!("---------------------------------------------");
+
+    // Test each filter and measure performance
+    for (name, filter) in filters {
+        let transform = Transformation::ResizeWithFilter(target_width, target_height, filter);
+
+        // Measure time
+        let start = Instant::now();
+        let resized = apply_transformation(&img, &transform, &SupportedFormat::JPEG)
+            .expect("Failed to resize image");
+        let duration = start.elapsed();
+
+        println!(
+            "{}: {:?} - dimensions: {}x{}",
+            name,
+            duration,
             resized.width(),
             resized.height()
         );
