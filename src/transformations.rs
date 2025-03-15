@@ -37,6 +37,39 @@
 /// - For very large images, consider resizing in steps (e.g., 50% repeatedly)
 /// - If exact dimensions are needed, use `resize_exact()` rather than `resize()`
 ///
+/// ## Crop Behavior Guide
+///
+/// The crop transformation supports two modes of operation:
+///
+/// ### 1. Explicit Crop
+///
+/// When specific coordinates and dimensions are provided:
+/// ```rust
+/// Transformation::Crop(x, y, width, height)
+/// ```
+/// - `x`, `y`: Top-left corner coordinates of the crop region
+/// - `width`, `height`: Dimensions of the crop region
+///
+/// The result is an image cropped to exactly these dimensions, taken from the specified position.
+///
+/// ### 2. Percentage-Based Crop
+///
+/// When all parameters are zero:
+/// ```rust
+/// Transformation::Crop(0, 0, 0, 0)
+/// ```
+/// This performs a centered crop that removes 20% from each side, resulting in an image that's 60% of the
+/// original size. This is useful for:
+/// - Creating thumbnails with consistent framing
+/// - Removing unnecessary borders
+/// - Focusing on the central subject of an image
+///
+/// ### Example Use Cases
+///
+/// - `Transformation::Crop(0, 0, 500, 500)`: Extract a 500×500 square from the top-left corner
+/// - `Transformation::Crop(width/4, height/4, width/2, height/2)`: Center crop to 50% of original size
+/// - `Transformation::Crop(0, 0, 0, 0)`: Automatic center crop to 60% of original size
+///
 use crate::types::{ResizeFilter, SupportedFormat, Transformation};
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
