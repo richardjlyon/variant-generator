@@ -571,13 +571,6 @@ fn convert_heic_to_dynamic_image(path: &Path) -> Result<DynamicImage, Box<dyn Er
             }
         }
     } else {
-        // If stride doesn't match, we need to create a new buffer with the correct stride
-        // This happens when there's padding at the end of each row for memory alignment
-        println!(
-            "HEIC image has stride {} for width {}, repacking data",
-            stride, width
-        );
-
         // Create a new buffer with the correct stride
         let mut rgb_data = Vec::with_capacity(width as usize * height as usize * 3);
 
